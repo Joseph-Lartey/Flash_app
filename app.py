@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, render_template
 import redis
 import mysql.connector
 import os
@@ -16,7 +16,6 @@ db = mysql.connector.connect(
     database=os.getenv('MYSQL_DATABASE', 'visit_counter')
 )
 
-
 # Check if table exists in MySQL, and create if not
 cursor = db.cursor()
 cursor.execute('''
@@ -30,7 +29,6 @@ result = cursor.fetchone()
 if not result:
     cursor.execute('INSERT INTO visit_count (count) VALUES (0)')
     db.commit()
-
 
 @app.route('/')
 def home():
@@ -46,8 +44,11 @@ def home():
         cursor.execute('UPDATE visit_count SET count = %s WHERE id = 1', (count,))
         db.commit()
 
-    return f"This page has been visited {count} times."
-
+    # Get visit counts from MySQL
+    cursor.execute('SELECT id, count FROM visit_count')
+    visits = cursor.fetchall()
+    
+    return render_template('index.html', visits=visits)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
