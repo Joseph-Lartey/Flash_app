@@ -1,17 +1,13 @@
-# Dockerfile
 FROM python:3.9-slim
 
 WORKDIR /app
 
+# Copy and install Python dependencies
 COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
+# Copy the application files
 COPY . .
 
-# Install psycopg2 for PostgreSQL connection
-RUN apt-get update && apt-get install -y libpq-dev gcc
-RUN pip install psycopg2
-
+# Command to run the Flask app
 CMD ["python", "app.py"]
-
-
