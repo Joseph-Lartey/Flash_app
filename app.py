@@ -1,71 +1,65 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 import redis
 import mysql.connector
 import os
 
 app = Flask(__name__)
 
-# Redis setup (if needed)
+# Redis setup
 redis_host = os.getenv('REDIS_HOST', 'localhost')
 redis_port = os.getenv('REDIS_PORT', 6379)
 redis_password = os.getenv('REDIS_PASSWORD', '')
+
 redis_client = redis.StrictRedis(
-    host=redis_host, port=redis_port, password=redis_password, decode_responses=True
+    host=redis_host, 
+    port=redis_port, 
+    password=redis_password, 
+    decode_responses=True
 )
 
-# MySQL configuration
-MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
-MYSQL_USER = os.getenv('MYSQL_USER', 'user')
-MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', 'your_password')
-MYSQL_DATABASE = os.getenv('MYSQL_DATABASE', 'visit_counter')
+# MySQL setup
+db_config = {
+    'user': os.getenv('MYSQL_USER', 'your_mysql_user'),
+    'password': os.getenv('MYSQL_PASSWORD', 'your_mysql_password'),
+    'host': os.getenv('MYSQL_HOST', 'your_mysql_host'),
+    'database': os.getenv('MYSQL_DB', 'your_database')
+}
 
-# Establish a connection to MySQL
 def get_db_connection():
-    connection = mysql.connector.connect(
-        host=MYSQL_HOST,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE
-    )
-    return connection
+    return mysql.connector.connect(**db_config)
 
-# Initialize the database by creating the 'visits' table if it doesn't exist
-def init_db():
-    connection = get_db_connection()
-    cursor = connection.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS visits (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            visit_count INT NOT NULL
-        );
-    ''')
-    cursor.execute('INSERT INTO visits (visit_count) VALUES (0) ON DUPLICATE KEY UPDATE visit_count=visit_count;')
-    connection.commit()
-    cursor.close()
-    connection.close()
-
+# Route to track user visits
 @app.route('/')
 def index():
-    connection = get_db_connection()
-    cursor = connection.cursor()
+    user_ip = request.remote_addr  # Use user's IP address as a temporary identifier
+    
+    # Check if user has visited before using Redis
+    if not redis_client.exists(user_ip):
+        redis_client.set(user_ip, 0)
 
-    # Increment the visit count
-    cursor.execute('UPDATE visits SET visit_count = visit_count + 1;')
-    connection.commit()
+    # Increment visit count for this user
+    redis_client.incr(user_ip)
+    visit_count = redis_client.get(user_ip)
 
-    # Retrieve the updated visit count
-    cursor.execute('SELECT visit_count FROM visits;')
-    visit_count = cursor.fetchone()[0]
+    # Insert or update visit count in MySQL database
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
+    # Check if the user already exists in MySQL and update visit count
+    cursor.execute("SELECT * FROM visits WHERE user_id = %s", (user_ip,))
+    result = cursor.fetchone()
+
+    if result:
+        cursor.execute("UPDATE visits SET visit_count = %s WHERE user_id = %s", (visit_count, user_ip))
+    else:
+        cursor.execute("INSERT INTO visits (user_id, visit_count) VALUES (%s, %s)", (user_ip, visit_count))
+
+    conn.commit()
     cursor.close()
-    connection.close()
+    conn.close()
 
-    # Optionally use Redis to cache visit count (this is just an example, remove if unnecessary)
-    redis_client.set('visit_count', visit_count)
-
-    return f"Hello! This page has been visited {visit_count} times."
+    # Render template with visit count for this user
+    return render_template('index.html', user_id=user_ip, visit_count=visit_count)
 
 if __name__ == '__main__':
-    # Initialize the database before starting the app
-    init_db()
     app.run(host='0.0.0.0', port=5000)
