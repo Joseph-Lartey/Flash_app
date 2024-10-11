@@ -1,46 +1,38 @@
 from flask import Flask
-import redis
+import os
 import psycopg2
+import redis
+
 
 app = Flask(__name__)
 
-# Redis connection
 r = redis.Redis(host="redis", port=6379)
 
-# PostgreSQL connection details
-def get_db_version():
+
+# Get PostgreSQL connection details from environment variables
+POSTGRES_URL = os.getenv('POSTGRES_URL')
+
+@app.route('/')
+def index():
     try:
-        conn = psycopg2.connect(
-            host="your_postgresql_host",  # e.g., "localhost"
-            database="your_database_name",  # e.g., "mydb"
-            user="your_username",  # e.g., "postgres"
-            password="your_password"  # e.g., "secret"
-        )
-        cur = conn.cursor()
-        cur.execute("SELECT version();")
-        db_version = cur.fetchone()
-        cur.close()
+        count = r.incr("hits")
+        # Connect to PostgreSQL
+        conn = psycopg2.connect(POSTGRES_URL)
+        cursor = conn.cursor()
+
+        # Execute a simple query
+        cursor.execute("SELECT version();")
+        db_version = cursor.fetchone()
+
+        cursor.close()
         conn.close()
-        return db_version
-    except Exception as e:
-        return f"Error connecting to PostgreSQL: {e}"
 
-
-@app.route("/")
-def home():
-    # Increment Redis hit counter
-    count = r.incr("hits")
-
-    # Fetch PostgreSQL version
-    db_version = get_db_version()
-
-    # Check if db_version is fetched successfully
-    if isinstance(db_version, tuple):
         return f"Connected to PostgreSQL! Database version: {db_version[0]}.<br>" \
-               f"This page has been visited {count} times."
-    else:
-        return f"{db_version}.<br>This page has been visited {count} times."
+            f"This page has been visited {count} times."
 
+    except Exception as e:
+        return f"Failed to connect to PostgreSQL: {str(e)}"
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0")
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+
