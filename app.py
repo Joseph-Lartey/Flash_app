@@ -18,6 +18,7 @@ redis_client = redis.StrictRedis(
 )
 
 
+
 # MySQL setup
 db_config = {
     'user': os.getenv('MYSQL_USER', 'your_mysql_user'),
